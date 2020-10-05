@@ -1,0 +1,82 @@
+version: "3"
+
+services:
+  authority-chaindnode0:
+    container_name: authority-chaindnode0
+    image: "poa"
+    ports:
+      - "26656-26657:26656-26657"
+      - "1317:1317"
+      - "9090:9090"
+    environment:
+      - ID=0
+      - LOG=${LOG:-authority-chaind.log}
+    volumes:
+      - ./build/.authority-chaind:/root/.authority-chaind
+      - ./build/validator:/root/validator
+    command: ["authority-chaind", "start", "--home", "/root/.authority-chaind"]
+    networks:
+      localnet:
+        ipv4_address: 192.16.10.2
+
+  authority-chaindnode1:
+    container_name: authority-chaindnode1
+    image: "poa"
+    ports:
+      - "26666-26667:26656-26657"
+      - "1318:1317"
+      - "9091:9090"
+    environment:       
+      - NODE0ADDRESS=${NODE0ADDRESS}
+      - ID=1
+      - LOG=${LOG:-authority-chaind.log}
+    command: ["sh", "-c", "authority-chaind init ac1 && cp genesis.json .authoritychaind/config && sed -i 's/peers = \"\"/peers = \"$NODE0ADDRESS\"/g' .authoritychaind/config/config.toml && authority-chaind start"]
+    volumes:
+      - ./build/.authority-chaind/config/genesis.json:/root/genesis.json
+    networks:
+      localnet:
+        ipv4_address: 192.16.10.3
+
+  authority-chaindnode2:
+    container_name: authority-chaindnode2
+    image: "poa"
+    ports:
+      - "26676-26677:26656-26657"
+      - "1319:1317"
+      - "9092:9090"
+    environment:       
+      - NODE0ADDRESS=${NODE0ADDRESS}
+      - ID=1
+      - LOG=${LOG:-authority-chaind.log}
+    command: ["sh", "-c", "authority-chaind init ac2 && cp genesis.json .authoritychaind/config && sed -i 's/peers = \"\"/peers = \"$NODE0ADDRESS\"/g' .authoritychaind/config/config.toml && authority-chaind start"]
+    volumes:
+      - ./build/.authority-chaind/config/genesis.json:/root/genesis.json
+    networks:
+      localnet:
+        ipv4_address: 192.16.10.4
+
+  authority-chaindnode3:
+    container_name: authority-chaindnode3
+    image: "poa"
+    ports:
+      - "26686-26687:26656-26657"
+      - "1320:1317"
+      - "9093:9090"
+    environment:       
+      - NODE0ADDRESS=${NODE0ADDRESS}
+      - ID=1
+      - LOG=${LOG:-authority-chaind.log}
+    command: ["sh", "-c", "authority-chaind init ac3 && cp genesis.json .authoritychaind/config && sed -i 's/peers = \"\"/peers = \"$NODE0ADDRESS\"/g' .authoritychaind/config/config.toml && authority-chaind start"]
+    volumes:
+      - ./build/.authority-chaind/config/genesis.json:/root/genesis.json
+    networks:
+      localnet:
+        ipv4_address: 192.16.10.5
+
+networks:
+  localnet:
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.16.10.0/16
+
