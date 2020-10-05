@@ -10,6 +10,13 @@ import (
 	tmos "github.com/tendermint/tendermint/libs/os"
 	dbm "github.com/tendermint/tm-db"
 
+	"github.com/allinbits/modules/poa"
+	poakeeper "github.com/allinbits/modules/poa/keeper"
+	poatypes "github.com/allinbits/modules/poa/types"
+
+	"github.com/PaddyMc/authority-chain/x/authoritychain"
+	authoritychainkeeper "github.com/PaddyMc/authority-chain/x/authoritychain/keeper"
+	authoritychaintypes "github.com/PaddyMc/authority-chain/x/authoritychain/types"
 	bam "github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/simapp"
@@ -20,34 +27,28 @@ import (
 	"github.com/cosmos/cosmos-sdk/x/bank"
 	"github.com/cosmos/cosmos-sdk/x/genutil"
 	"github.com/cosmos/cosmos-sdk/x/params"
-	"github.com/cosmos/cosmos-sdk/x/staking"
 	"github.com/cosmos/cosmos-sdk/x/supply"
-	"github.com/PaddyMc/authority-chain/x/authoritychain"
-	authoritychainkeeper "github.com/PaddyMc/authority-chain/x/authoritychain/keeper"
-	authoritychaintypes "github.com/PaddyMc/authority-chain/x/authoritychain/types"
-  // this line is used by starport scaffolding # 1
+	// this line is used by starport scaffolding # 1
 )
 
 const appName = "authoritychain"
 
 var (
-	DefaultCLIHome = os.ExpandEnv("$HOME/.authoritychaincli")
+	DefaultCLIHome  = os.ExpandEnv("$HOME/.authoritychaincli")
 	DefaultNodeHome = os.ExpandEnv("$HOME/.authoritychaind")
-	ModuleBasics = module.NewBasicManager(
+	ModuleBasics    = module.NewBasicManager(
 		genutil.AppModuleBasic{},
 		auth.AppModuleBasic{},
 		bank.AppModuleBasic{},
-		staking.AppModuleBasic{},
+		poa.AppModuleBasic{},
 		params.AppModuleBasic{},
 		supply.AppModuleBasic{},
 		authoritychain.AppModuleBasic{},
-    // this line is used by starport scaffolding # 2
+		// this line is used by starport scaffolding # 2
 	)
 
 	maccPerms = map[string][]string{
-		auth.FeeCollectorName:     nil,
-		staking.BondedPoolName:    {supply.Burner, supply.Staking},
-		staking.NotBondedPoolName: {supply.Burner, supply.Staking},
+		auth.FeeCollectorName: nil,
 	}
 )
 
@@ -72,13 +73,13 @@ type NewApp struct {
 
 	subspaces map[string]params.Subspace
 
-	accountKeeper  auth.AccountKeeper
-	bankKeeper     bank.Keeper
-	stakingKeeper  staking.Keeper
-	supplyKeeper   supply.Keeper
-	paramsKeeper   params.Keeper
+	accountKeeper        auth.AccountKeeper
+	bankKeeper           bank.Keeper
+	poaKeeper            poakeeper.Keeper
+	supplyKeeper         supply.Keeper
+	paramsKeeper         params.Keeper
 	authoritychainKeeper authoritychainkeeper.Keeper
-  // this line is used by starport scaffolding # 3
+	// this line is used by starport scaffolding # 3
 	mm *module.Manager
 
 	sm *module.SimulationManager
@@ -97,16 +98,16 @@ func NewInitApp(
 	bApp.SetAppVersion(version.Version)
 
 	keys := sdk.NewKVStoreKeys(
-    bam.MainStoreKey,
-    auth.StoreKey,
-    staking.StoreKey,
+		bam.MainStoreKey,
+		auth.StoreKey,
+		poatypes.StoreKey,
 		supply.StoreKey,
-    params.StoreKey,
-    authoritychaintypes.StoreKey,
-    // this line is used by starport scaffolding # 5
-  )
+		params.StoreKey,
+		authoritychaintypes.StoreKey,
+		// this line is used by starport scaffolding # 5
+	)
 
-	tKeys := sdk.NewTransientStoreKeys(staking.TStoreKey, params.TStoreKey)
+	tKeys := sdk.NewTransientStoreKeys(params.TStoreKey)
 
 	var app = &NewApp{
 		BaseApp:        bApp,
@@ -120,7 +121,7 @@ func NewInitApp(
 	app.paramsKeeper = params.NewKeeper(app.cdc, keys[params.StoreKey], tKeys[params.TStoreKey])
 	app.subspaces[auth.ModuleName] = app.paramsKeeper.Subspace(auth.DefaultParamspace)
 	app.subspaces[bank.ModuleName] = app.paramsKeeper.Subspace(bank.DefaultParamspace)
-	app.subspaces[staking.ModuleName] = app.paramsKeeper.Subspace(staking.DefaultParamspace)
+	app.subspaces[poatypes.ModuleName] = app.paramsKeeper.Subspace(poakeeper.DefaultParamspace)
 
 	app.accountKeeper = auth.NewAccountKeeper(
 		app.cdc,
@@ -143,15 +144,11 @@ func NewInitApp(
 		maccPerms,
 	)
 
-	stakingKeeper := staking.NewKeeper(
+	app.poaKeeper = poakeeper.NewKeeper(
+		app.bankKeeper,
 		app.cdc,
-		keys[staking.StoreKey],
-		app.supplyKeeper,
-		app.subspaces[staking.ModuleName],
-	)
-
-	app.stakingKeeper = *stakingKeeper.SetHooks(
-		staking.NewMultiStakingHooks(),
+		keys[poatypes.StoreKey],
+		app.subspaces[poatypes.ModuleName],
 	)
 
 	app.authoritychainKeeper = authoritychainkeeper.NewKeeper(
@@ -160,28 +157,30 @@ func NewInitApp(
 		keys[authoritychaintypes.StoreKey],
 	)
 
-  // this line is used by starport scaffolding # 4
+	// this line is used by starport scaffolding # 4
 
 	app.mm = module.NewManager(
-		genutil.NewAppModule(app.accountKeeper, app.stakingKeeper, app.BaseApp.DeliverTx),
+		genutil.NewAppModule(app.accountKeeper, app.poaKeeper, app.BaseApp.DeliverTx),
 		auth.NewAppModule(app.accountKeeper),
 		bank.NewAppModule(app.bankKeeper, app.accountKeeper),
 		supply.NewAppModule(app.supplyKeeper, app.accountKeeper),
 		authoritychain.NewAppModule(app.authoritychainKeeper, app.bankKeeper),
-		staking.NewAppModule(app.stakingKeeper, app.accountKeeper, app.supplyKeeper),
-    // this line is used by starport scaffolding # 6
+		poa.NewAppModule(app.poaKeeper, app.bankKeeper),
+		// this line is used by starport scaffolding # 6
 	)
 
-	app.mm.SetOrderEndBlockers(staking.ModuleName)
+	app.mm.SetOrderEndBlockers(poatypes.ModuleName)
+
+	genutil.ModuleCdc = app.cdc
 
 	app.mm.SetOrderInitGenesis(
-		staking.ModuleName,
+		poatypes.ModuleName,
 		auth.ModuleName,
 		bank.ModuleName,
 		authoritychaintypes.ModuleName,
 		supply.ModuleName,
 		genutil.ModuleName,
-    // this line is used by starport scaffolding # 7
+		// this line is used by starport scaffolding # 7
 	)
 
 	app.mm.RegisterRoutes(app.Router(), app.QueryRouter())
